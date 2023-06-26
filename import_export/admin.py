@@ -429,7 +429,7 @@ class ExportMixin(BaseExportMixin, ImportExportMixinBase):
             formats = self.get_export_formats()
             if self.export_stream_response:
                 dataset = self.resource_class().export_as_generator()
-                response = StreamingHttpResponse(dataset)
+                response = StreamingHttpResponse(streaming_content=dataset)
                 response['Content-Disposition'] = 'attachment; filename="%s"' % (
                     self.get_export_filename(request, queryset, formats[0]()),
                 )

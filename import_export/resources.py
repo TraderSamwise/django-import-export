@@ -931,6 +931,7 @@ class Resource(metaclass=DeclarativeMetaclass):
             iterable = queryset.iterator()
         else:
             iterable = queryset
+
         for obj in iterable:
             # Return subset of the data (one row)
             # This is a simple implementation to fix the tablib library which is missing returning the data as

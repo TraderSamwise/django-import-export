@@ -6,7 +6,7 @@ from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
 from django.contrib.auth import get_permission_codename
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.decorators import method_decorator
@@ -333,6 +333,8 @@ class ExportMixin(BaseExportMixin, ImportExportMixinBase):
     #: export data encoding
     to_encoding = None
 
+    export_stream_response = False
+
     def get_urls(self):
         urls = super().get_urls()
         my_urls = [
@@ -423,15 +425,26 @@ class ExportMixin(BaseExportMixin, ImportExportMixinBase):
             ]()
 
             queryset = self.get_export_queryset(request)
-            export_data = self.get_export_data(file_format, queryset, request=request, encoding=self.to_encoding)
-            content_type = file_format.get_content_type()
-            response = HttpResponse(export_data, content_type=content_type)
-            response['Content-Disposition'] = 'attachment; filename="%s"' % (
-                self.get_export_filename(request, queryset, file_format),
-            )
 
-            post_export.send(sender=None, model=self.model)
-            return response
+            formats = self.get_export_formats()
+            if self.export_stream_response:
+                dataset = self.resource_class().export_as_generator()
+                response = StreamingHttpResponse(dataset)
+                response['Content-Disposition'] = 'attachment; filename="%s"' % (
+                    self.get_export_filename(request, queryset, formats[0]()),
+                )
+                post_export.send(sender=None, model=self.model)
+                return response
+            else:
+                export_data = self.get_export_data(file_format, queryset, request=request, encoding=self.to_encoding)
+                content_type = file_format.get_content_type()
+                response = HttpResponse(export_data, content_type=content_type)
+                response['Content-Disposition'] = 'attachment; filename="%s"' % (
+                    self.get_export_filename(request, queryset, file_format),
+                )
+
+                post_export.send(sender=None, model=self.model)
+                return response
 
         context = self.get_export_context_data()
 
@@ -495,14 +508,22 @@ class ExportActionMixin(ExportMixin):
         """
         Exports the selected rows using file_format.
         """
+        formats = self.get_export_formats()
+        if self.export_stream_response:
+            dataset = self.resource_class().export_as_generator()
+            response = StreamingHttpResponse(dataset)
+            response['Content-Disposition'] = 'attachment; filename="%s"' % (
+                self.get_export_filename(request, queryset, formats[0]()),
+            )
+            return response
+
         export_format = request.POST.get('file_format')
 
         if not export_format:
             messages.warning(request, _('You must select an export format.'))
         else:
-            formats = self.get_export_formats()
-            file_format = formats[int(export_format)]()
 
+            file_format = formats[int(export_format)]()
             export_data = self.get_export_data(file_format, queryset, request=request, encoding=self.to_encoding)
             content_type = file_format.get_content_type()
             response = HttpResponse(export_data, content_type=content_type)
